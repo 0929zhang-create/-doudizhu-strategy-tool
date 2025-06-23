@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>斗地主策略助手</title>
+  <style>
+    body { font-family: sans-serif; padding: 20px; background: #f9f9f9; }
+    h1 { font-size: 24px; }
+    .hand, .history, .output, .side { margin: 20px 0; }
+    .cards button { margin: 2px; padding: 5px 10px; font-size: 16px; }
+    .selected { background: #87ceeb; }
+    .output-box { background: #fff; padding: 10px; border: 1px solid #ccc; border-radius: 6px; white-space: pre-wrap; }
+    textarea { width: 100%; height: 60px; margin-top: 5px; }
+  </style>
+</head>
+<body>
+  <h1>斗地主策略助手（在线版）</h1>
+
+  <div class="identity">
+    <label>你的身份：</label>
+    <select id="identity">
+      <option value="地主">地主</option>
+      <option value="农民">农民</option>
+    </select>
+  </div>
+
+  <div class="hand">
+    <label>点击选择你的手牌：</label>
+    <div class="cards" id="card-pool"></div>
+  </div>
+
+  <div class="side">
+    <label>上家身份：</label>
+    <select id="prevIdentity">
+      <option value="农民">农民</option>
+      <option value="地主">地主</option>
+    </select>
+    <br />
+    <label>上家出牌：</label>
+    <div class="cards" id="prev-card-pool"></div>
+  </div>
+
+  <div class="side">
+    <label>下家身份：</label>
+    <select id="nextIdentity">
+      <option value="农民">农民</option>
+      <option value="地主">地主</option>
+    </select>
+    <br />
+    <label>下家出牌：</label>
+    <div class="cards" id="next-card-pool"></div>
+  </div>
+
+  <div class="round">
+    <label>当前轮到我出牌：</label>
+    <select id="myTurn">
+      <option value="true">是</option>
+      <option value="false">否</option>
+    </select>
+  </div>
+
+  <div class="history">
+    <label>对局历史记录（每轮出牌）：</label>
+    <textarea id="history" placeholder="例如：上家出对5，我不出，下家出单J..."></textarea>
+  </div>
+
+  <div class="output">
+    <h2>推荐出牌</h2>
+    <div class="output-box" id="outputBox">等待输入...</div>
+  </div>
+
+  <script>
+    const cardPool = ["3","4","5","6","7","8","9","10","J","Q","K","A","2","小王","大王"];
+    let selectedCards = [], prevCards = [], nextCards = [];
+
+    function createCardPool(containerId, storageArray) {
+      const container = document.getElementById(containerId);
+      container.innerHTML = '';
+      cardPool.forEach(card => {
+        const btn = document.createElement('button');
+        const count = storageArray.filter(c => c === card).length;
+        btn.textContent = card + (count > 0 ? ` (${count})` : '');
+        btn.className = count > 0 ? 'selected' : '';
+        btn.onclick = () => {
+          if (count >= 4 && card !== '小王' && card !== '大王') return;
+          const index = storageArray.indexOf(card);
+          if (index >= 0) storageArray.splice(index, 1);
+          else storageArray.push(card);
+          createCardPool(containerId, storageArray);
+          analyzePlay();
+        };
+        container.appendChild(btn);
+      });
+    }
+
+    function renderCardButtons() {
+      createCardPool('card-pool', selectedCards);
+      createCardPool('prev-card-pool', prevCards);
+      createCardPool('next-card-pool', nextCards);
+      analyzePlay();
+    }
+
+    function countCards(cards) {
+      const map = {};
+      cards.forEach(c => map[c] = (map[c] || 0) + 1);
+      return map;
+    }
+
+    function detectSequence(cards, minLen = 5) {
+      const values = [...new Set(cards.map(cardValue))].filter(v => v <= 14).sort((a, b) => a - b);
+      let sequences = [];
+      let temp = [values[0]];
+      for (let i = 1; i < values.length; i++) {
+        if (values[i] === values[i - 1] + 1) {
+          temp.push(values[i]);
+        } else {
+          if (temp.length >= minLen) sequences.push([...temp]);
+          temp = [values[i]];
+        }
+      }
+      if (temp.length >= minLen) sequences.push([...temp]);
+      return sequences.map(seq => seq.map(v => cardPool.find(c => cardValue(c) === v)));
+    }
+
+    function analyzePlay() {
+      const identity = document.getElementById('identity').value;
+      const prevIdentity = document.getElementById('prevIdentity').value;
+      const nextIdentity = document.getElementById('nextIdentity').value;
+      const isMyTurn = document.getElementById('myTurn').value === 'true';
+      const history = document.getElementById('history').value.trim();
+
+      const sortedHand = [...selectedCards].sort((a, b) => cardValue(a) - cardValue(b));
+      let suggestion = `你的身份是：${identity}\n当前手牌：${sortedHand.join(' ')}\n`;
+      suggestion += `上家（${prevIdentity}）出牌：${prevCards.join(' ') || '无'}\n下家（${nextIdentity}）出牌：${nextCards.join(' ') || '无'}\n对局历史：${history || '无'}\n\n`;
+
+      suggestion += `【自动分析牌型】\n`;
+      const grouped = countCards(sortedHand);
+      const singles = Object.entries(grouped).filter(([_, v]) => v === 1).map(([k]) => k);
+      const pairs = Object.entries(grouped).filter(([_, v]) => v === 2).map(([k]) => k);
+      const triples = Object.entries(grouped).filter(([_, v]) => v === 3).map(([k]) => k);
+      const bombs = Object.entries(grouped).filter(([_, v]) => v === 4).map(([k]) => k);
+      const sequences = detectSequence(sortedHand);
+
+      suggestion += `单牌：${singles.join(' ')}\n对牌：${pairs.join(' ')}\n三张：${triples.join(' ')}\n炸弹：${bombs.join(' ')}\n顺子：${sequences.map(s => s.join(' ')).join(' | ') || '无'}\n\n`;
+
+      suggestion += `【智能决策】\n`;
+      if (!isMyTurn) {
+        suggestion += `当前不是你的出牌回合，无需出牌。`
+      } else if (prevCards.length === 0) {
+        if (sequences.length) {
+          suggestion += `建议出顺子：${sequences[0].join(' ')}\n`;
+        } else if (triples.length) {
+          suggestion += `建议出：${triples[0]}${singles.length ? '+' + singles[0] : ''}（三带一）\n`;
+        } else if (pairs.length) {
+          suggestion += `建议出：对${pairs[0]}\n`;
+        } else if (singles.length) {
+          suggestion += `建议出：单${singles[0]}\n`;
+        } else if (bombs.length) {
+          suggestion += `建议出：炸${bombs[0]}（谨慎使用）\n`;
+        } else {
+          suggestion += `无明显优势牌型，谨慎出牌。`
+        }
+      } else {
+        const prevMax = Math.max(...prevCards.map(cardValue));
+        const candidate = sortedHand.find(c => cardValue(c) > prevMax);
+        if (candidate) {
+          suggestion += `你可以压住上家的牌，建议出：${candidate}\n`;
+        } else {
+          suggestion += `建议选择【不出】，保留实力牌。`
+        }
+      }
+
+      if (nextIdentity === identity && nextCards.length > 0) {
+        suggestion += `\n【联盟提示】你和下家为同一阵营，可考虑协助下家控场。`
+      }
+
+      document.getElementById('outputBox').innerText = suggestion;
+    }
+
+    function cardValue(card) {
+      if (card === '小王') return 16;
+      if (card === '大王') return 17;
+      if (card === '2') return 15;
+      if (card === 'A') return 14;
+      if (card === 'K') return 13;
+      if (card === 'Q') return 12;
+      if (card === 'J') return 11;
+      return parseInt(card);
+    }
+
+    document.addEventListener('DOMContentLoaded', renderCardButtons);
+  </script>
+</body>
+</html>
