@@ -1,4 +1,8 @@
-<!DOCTYPE html>
+from pathlib import Path
+from zipfile import ZipFile
+
+# 新版 index.html 内容（简洁多张牌数量选择版本）
+index_html_content = """<!DOCTYPE html>
 <html lang="zh">
 <head>
 <meta charset="UTF-8" />
@@ -42,12 +46,9 @@
 const cardPool = ["3","4","5","6","7","8","9","10","J","Q","K","A","2","小王","大王"];
 
 // 初始化牌数量对象，所有牌数量为0
-let handCardsCount = {};
-let prevCardsCount = {};
-let nextCardsCount = {};
+let handCardsCount = {}, prevCardsCount = {}, nextCardsCount = {};
 cardPool.forEach(c => { handCardsCount[c]=0; prevCardsCount[c]=0; nextCardsCount[c]=0; });
 
-// 工具函数：渲染牌组（含数量和加减按钮）
 function renderCardGroup(containerId, cardsCount, onChange) {
   const container = document.getElementById(containerId);
   container.innerHTML = '';
@@ -55,46 +56,36 @@ function renderCardGroup(containerId, cardsCount, onChange) {
     const count = cardsCount[card];
     const cardDiv = document.createElement('div');
     cardDiv.className = 'card';
-    cardDiv.innerHTML = `
-      <button data-card="${card}" data-action="dec">-</button>
-      <span>${card} (${count})</span>
-      <button data-card="${card}" data-action="inc">+</button>
-    `;
+    cardDiv.innerHTML = \`
+      <button data-card="\${card}" data-action="dec">-</button>
+      <span>\${card} (\${count})</span>
+      <button data-card="\${card}" data-action="inc">+</button>
+    \`;
     container.appendChild(cardDiv);
   });
-
-  // 绑定点击事件
   container.querySelectorAll('button').forEach(btn => {
     btn.onclick = e => {
       const card = btn.getAttribute('data-card');
       const action = btn.getAttribute('data-action');
       if (action === 'inc') {
-        if(cardsCount[card]<4 || card === '小王' || card === '大王'){
-          cardsCount[card]++;
-        }
+        if(cardsCount[card]<4 || card === '小王' || card === '大王'){ cardsCount[card]++; }
       } else if(action === 'dec') {
-        if(cardsCount[card]>0){
-          cardsCount[card]--;
-        }
+        if(cardsCount[card]>0){ cardsCount[card]--; }
       }
       onChange();
-      renderAll(); // 刷新显示
+      renderAll();
     };
   });
 }
 
-// 把牌数量对象转为牌数组（按牌值排序）
 function cardsCountToArray(cardsCount) {
   const arr = [];
   cardPool.forEach(card => {
-    for(let i=0; i<cardsCount[card]; i++) {
-      arr.push(card);
-    }
+    for(let i=0; i<cardsCount[card]; i++) arr.push(card);
   });
   return arr;
 }
 
-// 牌值映射（用于排序）
 function cardValue(card) {
   if (card === '小王') return 16;
   if (card === '大王') return 17;
@@ -106,27 +97,24 @@ function cardValue(card) {
   return parseInt(card);
 }
 
-// 简单分析手牌，生成建议（示例）
 function analyzePlay() {
   const hand = cardsCountToArray(handCardsCount).sort((a,b)=>cardValue(a)-cardValue(b));
   const prev = cardsCountToArray(prevCardsCount);
   const next = cardsCountToArray(nextCardsCount);
 
-  let suggestion = `当前手牌：${hand.join(' ')}\n上家出牌：${prev.join(' ') || '无'}\n下家出牌：${next.join(' ') || '无'}\n\n`;
+  let suggestion = \`当前手牌：\${hand.join(' ')}\\n上家出牌：\${prev.join(' ') || '无'}\\n下家出牌：\${next.join(' ') || '无'}\\n\\n\`;
 
-  // 简单策略演示：
   if(hand.length === 0){
     suggestion += "你没有手牌了，游戏结束？";
   } else if(prev.length === 0){
-    suggestion += `建议：你先出牌，试试单牌${hand[0]}。`;
+    suggestion += \`建议：你先出牌，试试单牌\${hand[0]}。\`;
   } else {
-    // 试图压住上家最大的牌
     const prevMax = Math.max(...prev.map(cardValue));
     const canBeat = hand.find(c => cardValue(c) > prevMax);
     if(canBeat){
-      suggestion += `建议压牌：出${canBeat}`;
+      suggestion += \`建议压牌：出\${canBeat}\`;
     } else {
-      suggestion += `建议不出，保存实力。`;
+      suggestion += \`建议不出，保存实力。\`;
     }
   }
   document.getElementById('outputBox').textContent = suggestion;
@@ -140,6 +128,5 @@ function renderAll() {
 
 renderAll();
 </script>
-
 </body>
-</html>
+</html>"""
