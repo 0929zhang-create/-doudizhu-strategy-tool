@@ -1,8 +1,129 @@
 <!DOCTYPE html>
 <html lang="zh">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>斗地主策略助手（多张牌数量版）</title>
+<style>
+  body { font-family: sans-serif; padding: 20px; background: #f9f9f9; }
+  .cards { display: flex; flex-wrap: wrap; max-width: 600px; }
+  .card {
+    border: 1px solid #ccc; border-radius: 6px; padding: 6px 10px; margin: 4px;
+    user-select: none; display: flex; align-items: center;
+  }
+  .card > span { margin: 0 6px; font-weight: bold; }
+  button { cursor: pointer; }
+</style>
+</head>
+<body>
+<h1>斗地主策略助手（支持多张牌数量）</h1>
+
+<div>
+  <label>你的手牌：</label>
+  <div class="cards" id="hand-cards"></div>
+</div>
+
+<div>
+  <label>上家出牌：</label>
+  <div class="cards" id="prev-cards"></div>
+</div>
+
+<div>
+  <label>下家出牌：</label>
+  <div class="cards" id="next-cards"></div>
+</div>
+
+<div>
+  <h2>推荐出牌</h2>
+  <pre id="outputBox">等待输入...</pre>
+</div>
+
+<script>
+const cardPool = ["3","4","5","6","7","8","9","10","J","Q","K","A","2","小王","大王"];
+let handCardsCount = {}, prevCardsCount = {}, nextCardsCount = {};
+cardPool.forEach(c => { handCardsCount[c]=0; prevCardsCount[c]=0; nextCardsCount[c]=0; });
+
+function renderCardGroup(containerId, cardsCount, onChange) {
+  const container = document.getElementById(containerId);
+  container.innerHTML = '';
+  cardPool.forEach(card => {
+    const count = cardsCount[card];
+    const cardDiv = document.createElement('div');
+    cardDiv.className = 'card';
+    cardDiv.innerHTML = \`
+      <button data-card="\${card}" data-action="dec">-</button>
+      <span>\${card} (\${count})</span>
+      <button data-card="\${card}" data-action="inc">+</button>
+    \`;
+    container.appendChild(cardDiv);
+  });
+  container.querySelectorAll('button').forEach(btn => {
+    btn.onclick = e => {
+      const card = btn.getAttribute('data-card');
+      const action = btn.getAttribute('data-action');
+      if (action === 'inc') {
+        if(cardsCount[card]<4 || card === '小王' || card === '大王'){ cardsCount[card]++; }
+      } else if(action === 'dec') {
+        if(cardsCount[card]>0){ cardsCount[card]--; }
+      }
+      onChange();
+      renderAll();
+    };
+  });
+}
+
+function cardsCountToArray(cardsCount) {
+  const arr = [];
+  cardPool.forEach(card => {
+    for(let i=0; i<cardsCount[card]; i++) arr.push(card);
+  });
+  return arr;
+}
+
+function cardValue(card) {
+  if (card === '小王') return 16;
+  if (card === '大王') return 17;
+  if (card === '2') return 15;
+  if (card === 'A') return 14;
+  if (card === 'K') return 13;
+  if (card === 'Q') return 12;
+  if (card === 'J') return 11;
+  return parseInt(card);
+}
+
+function analyzePlay() {
+  const hand = cardsCountToArray(handCardsCount).sort((a,b)=>cardValue(a)-cardValue(b));
+  const prev = cardsCountToArray(prevCardsCount);
+  const next = cardsCountToArray(nextCardsCount);
+
+  let suggestion = \`当前手牌：\${hand.join(' ')}\n上家出牌：\${prev.join(' ') || '无'}\n下家出牌：\${next.join(' ') || '无'}\n\n\`;
+
+  if(hand.length === 0){
+    suggestion += "你没有手牌了，游戏结束？";
+  } else if(prev.length === 0){
+    suggestion += \`建议：你先出牌，试试单牌\${hand[0]}。\`;
+  } else {
+    const prevMax = Math.max(...prev.map(cardValue));
+    const canBeat = hand.find(c => cardValue(c) > prevMax);
+    if(canBeat){
+      suggestion += \`建议压牌：出\${canBeat}\`;
+    } else {
+      suggestion += \`建议不出，保存实力。\`;
+    }
+  }
+  document.getElementById('outputBox').textContent = suggestion;
+}
+
+function renderAll() {
+  renderCardGroup('hand-cards', handCardsCount, analyzePlay);
+  renderCardGroup('prev-cards', prevCardsCount, analyzePlay);
+  renderCardGroup('next-cards', nextCardsCount, analyzePlay);
+}
+
+renderAll();
+</script>
+</body>
+</html>nitial-scale=1.0" />
   <title>斗地主策略助手</title>
   <style>
     body { font-family: sans-serif; padding: 20px; background: #f9f9f9; }
