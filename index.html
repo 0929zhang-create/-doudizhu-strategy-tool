@@ -1,132 +1,273 @@
-from pathlib import Path
-from zipfile import ZipFile
-
-# 新版 index.html 内容（简洁多张牌数量选择版本）
-index_html_content = """<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>斗地主策略助手（多张牌数量版）</title>
-<style>
-  body { font-family: sans-serif; padding: 20px; background: #f9f9f9; }
-  .cards { display: flex; flex-wrap: wrap; max-width: 600px; }
-  .card {
-    border: 1px solid #ccc; border-radius: 6px; padding: 6px 10px; margin: 4px;
-    user-select: none; display: flex; align-items: center;
-  }
-  .card > span { margin: 0 6px; font-weight: bold; }
-  button { cursor: pointer; }
-</style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>斗地主策略助手</title>
+  <style>
+    body { font-family: sans-serif; padding: 20px; background: #f9f9f9; }
+    h1 { font-size: 24px; }
+    .hand, .history, .output, .side { margin: 20px 0; }
+    .cards { display: flex; flex-wrap: wrap; }
+    .card-btn { margin: 2px; padding: 5px 10px; font-size: 16px; display: inline-flex; align-items: center; border:1px solid #ccc; border-radius:4px; background:#fff; }
+    .card-btn.selected { background: #87ceeb; }
+    .card-btn button { margin:0 2px; }
+    .output-box { background: #fff; padding: 10px; border: 1px solid #ccc; border-radius: 6px; white-space: pre-wrap; }
+    textarea { width: 100%; height: 60px; margin-top: 5px; }
+  </style>
 </head>
 <body>
-<h1>斗地主策略助手（支持多张牌数量）</h1>
+  <h1>斗地主策略助手（智能版 v1.2）</h1>
 
-<div>
-  <label>你的手牌：</label>
-  <div class="cards" id="hand-cards"></div>
-</div>
+  <div class="identity">
+    <label>你的身份：</label>
+    <select id="identity">
+      <option value="地主">地主</option>
+      <option value="农民">农民</option>
+    </select>
+  </div>
 
-<div>
-  <label>上家出牌：</label>
-  <div class="cards" id="prev-cards"></div>
-</div>
+  <div class="hand">
+    <label>点击选择你的手牌：</label>
+    <div class="cards" id="hand-cards"></div>
+  </div>
 
-<div>
-  <label>下家出牌：</label>
-  <div class="cards" id="next-cards"></div>
-</div>
+  <div class="side">
+    <label>上家身份：</label>
+    <select id="prevIdentity">
+      <option value="农民">农民</option>
+      <option value="地主">地主</option>
+    </select>
+    <br />
+    <label>上家出牌：</label>
+    <div class="cards" id="prev-cards"></div>
+  </div>
 
-<div>
-  <h2>推荐出牌</h2>
-  <pre id="outputBox">等待输入...</pre>
-</div>
+  <div class="side">
+    <label>下家身份：</label>
+    <select id="nextIdentity">
+      <option value="农民">农民</option>
+      <option value="地主">地主</option>
+    </select>
+    <br />
+    <label>下家出牌：</label>
+    <div class="cards" id="next-cards"></div>
+  </div>
 
-<script>
-const cardPool = ["3","4","5","6","7","8","9","10","J","Q","K","A","2","小王","大王"];
+  <div class="round">
+    <label>当前轮到我出牌：</label>
+    <select id="myTurn">
+      <option value="true">是</option>
+      <option value="false">否</option>
+    </select>
+  </div>
 
-// 初始化牌数量对象，所有牌数量为0
-let handCardsCount = {}, prevCardsCount = {}, nextCardsCount = {};
-cardPool.forEach(c => { handCardsCount[c]=0; prevCardsCount[c]=0; nextCardsCount[c]=0; });
+  <div class="history">
+    <label>对局历史记录（可选）：</label>
+    <textarea id="history" placeholder="例如：上家出对5，我不出，下家出单J..."></textarea>
+  </div>
 
-function renderCardGroup(containerId, cardsCount, onChange) {
-  const container = document.getElementById(containerId);
-  container.innerHTML = '';
-  cardPool.forEach(card => {
-    const count = cardsCount[card];
-    const cardDiv = document.createElement('div');
-    cardDiv.className = 'card';
-    cardDiv.innerHTML = \`
-      <button data-card="\${card}" data-action="dec">-</button>
-      <span>\${card} (\${count})</span>
-      <button data-card="\${card}" data-action="inc">+</button>
-    \`;
-    container.appendChild(cardDiv);
-  });
-  container.querySelectorAll('button').forEach(btn => {
-    btn.onclick = e => {
-      const card = btn.getAttribute('data-card');
-      const action = btn.getAttribute('data-action');
-      if (action === 'inc') {
-        if(cardsCount[card]<4 || card === '小王' || card === '大王'){ cardsCount[card]++; }
-      } else if(action === 'dec') {
-        if(cardsCount[card]>0){ cardsCount[card]--; }
-      }
-      onChange();
-      renderAll();
-    };
-  });
-}
+  <div class="output">
+    <h2>推荐出牌</h2>
+    <div class="output-box" id="outputBox">等待输入...</div>
+  </div>
 
-function cardsCountToArray(cardsCount) {
-  const arr = [];
-  cardPool.forEach(card => {
-    for(let i=0; i<cardsCount[card]; i++) arr.push(card);
-  });
-  return arr;
-}
+  <script>
+    const cardPool = ["3","4","5","6","7","8","9","10","J","Q","K","A","2","小王","大王"];
+    let handCount = {}, prevCount = {}, nextCount = {};
+    cardPool.forEach(c=>{ handCount[c]=0; prevCount[c]=0; nextCount[c]=0; });
 
-function cardValue(card) {
-  if (card === '小王') return 16;
-  if (card === '大王') return 17;
-  if (card === '2') return 15;
-  if (card === 'A') return 14;
-  if (card === 'K') return 13;
-  if (card === 'Q') return 12;
-  if (card === 'J') return 11;
-  return parseInt(card);
-}
-
-function analyzePlay() {
-  const hand = cardsCountToArray(handCardsCount).sort((a,b)=>cardValue(a)-cardValue(b));
-  const prev = cardsCountToArray(prevCardsCount);
-  const next = cardsCountToArray(nextCardsCount);
-
-  let suggestion = \`当前手牌：\${hand.join(' ')}\\n上家出牌：\${prev.join(' ') || '无'}\\n下家出牌：\${next.join(' ') || '无'}\\n\\n\`;
-
-  if(hand.length === 0){
-    suggestion += "你没有手牌了，游戏结束？";
-  } else if(prev.length === 0){
-    suggestion += \`建议：你先出牌，试试单牌\${hand[0]}。\`;
-  } else {
-    const prevMax = Math.max(...prev.map(cardValue));
-    const canBeat = hand.find(c => cardValue(c) > prevMax);
-    if(canBeat){
-      suggestion += \`建议压牌：出\${canBeat}\`;
-    } else {
-      suggestion += \`建议不出，保存实力。\`;
+    function renderGroup(containerId, countObj, onChange) {
+      const container = document.getElementById(containerId);
+      container.innerHTML = '';
+      cardPool.forEach(card => {
+        const cnt = countObj[card];
+        const btn = document.createElement('div');
+        btn.className = 'card-btn';
+        if(cnt>0) btn.classList.add('selected');
+        btn.innerHTML = `<span>${card}(${cnt})</span><button data-card='${card}' data-action='inc'>+</button><button data-card='${card}' data-action='dec'>-</button>`;
+        container.appendChild(btn);
+      });
+      container.querySelectorAll('button').forEach(b=>{
+        b.onclick = (e)=>{
+          const card = b.getAttribute('data-card');
+          const action = b.getAttribute('data-action');
+          if(action==='inc'){
+            if(handActionTarget===containerId){ if(handCount[card]>=4 && card!=='小王' && card!=='大王') return; }
+            if(prevActionTarget===containerId){ if(prevCount[card]>=4 && card!=='小王' && card!=='大王') return; }
+            if(nextActionTarget===containerId){ if(nextCount[card]>=4 && card!=='小王' && card!=='大王') return; }
+            countObj[card]++;
+          } else {
+            if(countObj[card]>0) countObj[card]--;
+          }
+          onChange(); renderAll();
+        };
+      });
     }
-  }
-  document.getElementById('outputBox').textContent = suggestion;
-}
+    let handActionTarget='hand-cards', prevActionTarget='prev-cards', nextActionTarget='next-cards';
 
-function renderAll() {
-  renderCardGroup('hand-cards', handCardsCount, analyzePlay);
-  renderCardGroup('prev-cards', prevCardsCount, analyzePlay);
-  renderCardGroup('next-cards', nextCardsCount, analyzePlay);
-}
+    function cardsFromCount(countObj){ const arr=[]; cardPool.forEach(c=>{ for(let i=0;i<countObj[c];i++) arr.push(c);} ); return arr; }
+    function cardValue(card){ if(card==='小王') return 16; if(card==='大王') return 17; if(card==='2') return 15; if(card==='A') return 14; if(card==='K') return 13; if(card==='Q') return 12; if(card==='J') return 11; return parseInt(card);}    
 
-renderAll();
-</script>
+    // 牌型识别和比较
+    function identify(cards){ if(cards.length===0) return {type:'pass'};
+      const counts = {};
+      cards.forEach(c=>counts[c]=(counts[c]||0)+1);
+      const vals = Object.keys(counts).map(cardValue).sort((a,b)=>a-b);
+      const cnts = Object.values(counts).sort((a,b)=>b-a);
+      // 火箭
+      if(counts['小王']===1 && counts['大王']===1) return {type:'rocket',main:17,len:2};
+      // 炸弹
+      if(cnts[0]===4) return {type:'bomb',main:cardValue(cards.find(c=>counts[c]===4)),len:4};
+      // 三带
+      if(cnts[0]===3){ if(cards.length===3) return {type:'triple',main:cardValue(cards.find(c=>counts[c]===3)),len:3};
+        if(cards.length===4) return {type:'triple+single',main:cardValue(cards.find(c=>counts[c]===3)),len:4};
+        if(cards.length===5 && cnts[1]===2) return {type:'triple+pair',main:cardValue(cards.find(c=>counts[c]===3)),len:5};
+      }
+      // 顺子
+      if(cards.length>=5){ let vs=[...new Set(cards.map(cardValue))].sort((a,b)=>a-b);
+        if(vs[vs.length-1]<=14){ let ok=true; for(let i=1;i<vs.length;i++){ if(vs[i]!==vs[i-1]+1) ok=false;} if(ok && vs.length===cards.length) return {type:'sequence',main:vs[0],len:cards.length}; }
+      }
+      // 连对
+      if(cards.length>=6 && cards.length%2===0){ let vs=[...new Set(cards.map(cardValue))].sort((a,b)=>a-b);
+        if(vs[vs.length-1]<=14){ let ok=true; for(let i=1;i<vs.length;i++){ if(vs[i]!==vs[i-1]+1) ok=false;} if(ok && Object.values(counts).every(v=>v===2)) return {type:'pair_sequence',main:vs[0],len:cards.length}; }
+      }
+      // 飞机带
+      if(cards.length>=8){ // 简化：3顺至少两段
+        const triples = Object.entries(counts).filter(([k,v])=>v>=3).map(([k])=>cardValue(k)).sort((a,b)=>a-b);
+        for(let i=0;i<triples.length-1;i++){ if(triples[i+1]===triples[i]+1){ // found seq
+            const seq=[triples[i],triples[i+1]];
+            // 需要带2张单或对子
+            if(cards.length===seq.length*3+seq.length){ return {type:'plane+single',main:seq[0],len:cards.length}; }
+            if(cards.length===seq.length*3+seq.length*2){ return {type:'plane+pair',main:seq[0],len:cards.length}; }
+          }}
+      }
+      // 对子
+      if(cards.length===2 && cnts[0]===2) return {type:'pair',main:cardValue(cards[0]),len:2};
+      // 单张
+      if(cards.length===1) return {type:'single',main:cardValue(cards[0]),len:1};
+      return {type:'unknown',main:0,len:cards.length}; }
+
+    function compareType(a,b,prevType){ // return true if a beats b
+      if(b.type==='pass') return true;
+      if(a.type==='rocket') return true;
+      if(a.type==='bomb' && b.type!=='bomb') return true;
+      if(a.type===b.type && a.len===b.len && a.main>b.main) return true;
+      if(a.type==='bomb' && b.type==='bomb' && a.main>b.main) return true;
+      return false;
+    }
+
+    // 枚举所有牌型组合
+    function enumeratePlays(hand){ const plays=[];
+      const counts={}; hand.forEach(c=>counts[c]=(counts[c]||0)+1);
+      const cards=Object.keys(counts);
+      // 单牌
+      cards.forEach(c=>plays.push([c]));
+      // 对子
+      cards.filter(c=>counts[c]>=2).forEach(c=>plays.push([c,c]));
+      // 三张、三带单、三带对
+      cards.filter(c=>counts[c]>=3).forEach(c=>{
+        plays.push([c,c,c]);
+        // 三带单
+        cards.filter(d=>d!==c && counts[d]>=1).forEach(d=>plays.push([c,c,c,d]));
+        // 三带对
+        cards.filter(d=>d!==c && counts[d]>=2).forEach(d=>plays.push([c,c,c,d,d]));
+      });
+      // 顺子
+      const vals=[...new Set(hand.map(cardValue))].filter(v=>v<=14).sort((a,b)=>a-b);
+      for(let i=0;i<vals.length;i++){ for(let j=i+5;j<=vals.length;j++){ const seq=vals.slice(i,j);
+          if(seq.length>=5 && seq[seq.length-1]===vals[i]+seq.length-1){ // continuous
+            const combo=seq.map(v=>cardPool.find(c=>cardValue(c)===v)); plays.push(combo);
+          } }
+      }
+      // 连对
+      const pairVals=cards.filter(c=>counts[c]>=2).map(c=>cardValue(c)).filter(v=>v<=14).sort((a,b)=>a-b);
+      for(let i=0;i<pairVals.length;i++){ for(let j=i+3;j<=pairVals.length;j++){ const seq=pairVals.slice(i,j);
+          if(seq.length>=3 && seq[seq.length-1]===pairVals[i]+seq.length-1){ const combo=[]; seq.forEach(v=>{ const card=cardPool.find(c=>cardValue(c)===v); combo.push(card,card); }); plays.push(combo);} }
+      }
+      // 飞机（简化两连）
+      const tripleVals=cards.filter(c=>counts[c]>=3).map(c=>cardValue(c)).filter(v=>v<=14).sort((a,b)=>a-b);
+      for(let i=0;i<tripleVals.length-1;i++){ if(tripleVals[i+1]===tripleVals[i]+1){ const seq=[tripleVals[i],tripleVals[i+1]];
+          // 带单
+          const singlePool=cards.filter(c=>!seq.includes(cardValue(c))&&counts[c]>=1);
+          singlePool.forEach(s=>{
+            const combo=[]; seq.forEach(v=>{ const card=cardPool.find(c=>cardValue(c)===v); combo.push(card,card,card); }); combo.push(s); plays.push(combo);
+          });
+          // 带对
+          const pairPool=cards.filter(c=>!seq.includes(cardValue(c))&&counts[c]>=2);
+          pairPool.forEach(p=>{
+            const combo=[]; seq.forEach(v=>{ const card=cardPool.find(c=>cardValue(c)===v); combo.push(card,card,card); }); combo.push(p,p); plays.push(combo);
+          });
+      }}
+      // 炸弹
+      cards.filter(c=>counts[c]===4).forEach(c=>plays.push([c,c,c,c]));
+      // 火箭
+      if(counts['小王']>=1 && counts['大王']>=1) plays.push(['小王','大王']);
+      return plays;
+    }
+
+    function scorePlay(cards, identity, nextIdentity){ const info=identify(cards);
+      const base={ 'rocket':1000, 'bomb':800, 'plane+pair':600, 'plane+single':580, 'sequence':500, 'pair_sequence':450, 'triple+pair':400, 'triple+single':380, 'triple':360, 'pair':200, 'single':100, 'pass':0, 'unknown':50 };
+      let score=base[info.type]||50;
+      score += info.main;
+      // 身份协作：如果下家是同阵营，可偏向出小牌帮对家
+      if(identity===nextIdentity){ score -= 10; }
+      return score;
+    }
+
+    function recommendPlays(hand, prev, identity, nextIdentity){ const plays=enumeratePlays(hand);
+      const results=[];
+      const prevInfo=identify(prev);
+      plays.forEach(p=>{
+        const info=identify(p);
+        if(prev.length>0){ if(compareType(info,prevInfo,prevInfo)){
+            results.push({cards:p,score:scorePlay(p,identity,nextIdentity)});
+        }} else { results.push({cards:p,score:scorePlay(p,identity,nextIdentity)}); }
+      });
+      // 加入不出选项
+      if(prev.length>0) results.push({cards:[],score:10,reason:'不出，保留实力'});
+      results.sort((a,b)=>b.score-a.score);
+      return results.slice(0,3);
+    }
+
+    function analyzePlay(){ const identity=document.getElementById('identity').value;
+      const prevIdentity=document.getElementById('prevIdentity').value;
+      const nextIdentity=document.getElementById('nextIdentity').value;
+      const isMyTurn=document.getElementById('myTurn').value==='true';
+      const history=document.getElementById('history').value.trim();
+      const hand=cardsFromCount(handCount).sort((a,b)=>cardValue(a)-cardValue(b));
+      const prev=cardsFromCount(prevCount);
+      const next=cardsFromCount(nextCount);
+      let text=`你的身份：${identity}\n当前手牌：${hand.join(' ')}\n上家（${prevIdentity}）出牌：${prev.join(' ')||'无'}\n下家（${nextIdentity}）出牌：${next.join(' ')||'无'}\n对局历史：${history||'无'}\n\n`;
+      text+=`【自动分析牌型】\n`;
+      const g=countCards(hand);
+      const singles=Object.entries(g).filter(([_,v])=>v===1).map(([k])=>k);
+      const pairs=Object.entries(g).filter(([_,v])=>v===2).map(([k])=>k);
+      const triples=Object.entries(g).filter(([_,v])=>v>=3).map(([k])=>k);
+      const bombs=Object.entries(g).filter(([_,v])=>v===4).map(([k])=>k);
+      const seqs=detectSequence(hand);
+      text+=`单牌：${singles.join(' ')}\n对牌：${pairs.join(' ')}\n三张：${triples.join(' ')}\n炸弹：${bombs.join(' ')}\n顺子：${seqs.map(s=>s.join(' ')).join(' | ')||'无'}\n\n`;
+      if(!isMyTurn){ text+='当前不是你的出牌回合。'; }
+      else {
+        const recs=recommendPlays(hand,prev,identity,nextIdentity);
+        text+='【推荐出牌 Top 3】\n';
+        recs.forEach((r,i)=>{
+          const cs=r.cards.length? r.cards.join(' '): '不出';
+          text+=`${i+1}. ${cs} (得分 ${r.score})\n`;
+        });
+      }
+      document.getElementById('outputBox').innerText=text;
+    }
+
+    function countCards(arr){ const m={}; arr.forEach(c=>m[c]=(m[c]||0)+1); return m; }
+    function cardsFromCount(countObj){ const arr=[]; cardPool.forEach(c=>{ for(let i=0;i<countObj[c];i++) arr.push(c); }); return arr; }
+
+    function renderAll(){ renderGroup('hand-cards',handCount,analyzePlay);
+      renderGroup('prev-cards',prevCount,analyzePlay);
+      renderGroup('next-cards',nextCount,analyzePlay);
+      analyzePlay(); }
+
+    document.addEventListener('DOMContentLoaded',renderAll);
+  </script>
 </body>
-</html>"""
+</html>
